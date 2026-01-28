@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "Connection": {
+      "title": "WebRTC Connection",
+      "description": "Represents a WebRTC signaling session for screen sharing.",
+      "type": "object",
+      "properties": {
+        "offer": {
+          "type": "object",
+          "description": "The SDP offer from the initiating peer."
+        },
+        "answer": {
+          "type": "object",
+          "description": "The SDP answer from the receiving peer."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the connection.",
+          "enum": ["offering", "connected", "disconnected"]
+        },
+        "initiatorName": {
+            "type": "string",
+            "description": "A display name for the device initiating the connection."
+        }
+      },
+      "required": ["offer", "status", "initiatorName"]
+    },
+    "IceCandidate": {
+        "title": "ICE Candidate",
+        "description": "A candidate for establishing the WebRTC peer-to-peer connection.",
+        "type": "object",
+        "properties": {
+            "candidate": { "type": "string" },
+            "sdpMid": { "type": "string" },
+            "sdpMLineIndex": { "type": "number" }
+        },
+        "required": ["candidate", "sdpMid", "sdpMLineIndex"]
+    }
+  },
+  "auth": {
+    "providers": []
+  },
+  "firestore": {
+    "/connections/{connectionId}": {
+      "schema": { "$ref": "#/backend/entities/Connection" },
+      "description": "A collection of WebRTC signaling sessions."
+    },
+    "/connections/{connectionId}/callerCandidates/{candidateId}": {
+        "schema": { "$ref": "#/backend/entities/IceCandidate" },
+        "description": "ICE candidates from the peer that initiated the call."
+    },
+    "/connections/{connectionId}/calleeCandidates/{candidateId}": {
+        "schema": { "$ref": "#/backend/entities/IceCandidate" },
+        "description": "ICE candidates from the peer that answered the call."
+    }
+  }
+}
