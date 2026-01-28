@@ -33,7 +33,7 @@ export function Receiver() {
       if (firestore && receiverId) {
         // Reset status to available
         const receiverRef = doc(firestore, "receivers", receiverId);
-        updateDoc(receiverRef, { status: "available", offer: null, answer: null });
+        updateDoc(receiverRef, { status: "available", offer: null, answer: null, sharerDeviceName: null });
       }
     }
   };
@@ -95,7 +95,7 @@ export function Receiver() {
     
     switch (connectionState) {
         case 'new': return 'Iniciando conexión...';
-        case 'connecting': return 'Conectando...';
+        case 'connecting': return `Conectando con ${receiver.sharerDeviceName || 'un dispositivo'}...`;
         case 'connected': return `Conectado a ${receiver.sharerDeviceName || 'dispositivo'}`;
         case 'disconnected': return 'Desconectado. Esperando nueva conexión.';
         case 'failed': return 'Conexión fallida. Por favor, inténtelo de nuevo.';

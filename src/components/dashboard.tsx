@@ -6,6 +6,7 @@ import { ReceiverList } from "./connection-list";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore } from "@/firebase";
 import { initiateShare, hangUp } from "@/firebase/webrtc";
+import { DeviceNameModal } from "./device-name-modal";
 
 export function Dashboard() {
   const { toast } = useToast();
@@ -14,6 +15,10 @@ export function Dashboard() {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>('new');
   
+  const [isNameModalOpen, setIsNameModalOpen] = useState(false);
+  const [sharerDeviceName, setSharerDeviceName] = useState<string | null>(null);
+  const [pendingReceiverId, setPendingReceiverId] = useState<string | null>(null);
+
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const handleStopSharing = useCallback(async () => {
@@ -39,7 +44,7 @@ export function Dashboard() {
     }
   }
 
-  const handleStartSharing = useCallback(async (receiverId: string) => {
+  const startSharingProcess = useCallback(async (receiverId: string, deviceName: string) => {
     if (!firestore) {
       toast({
         variant: "destructive",
@@ -66,7 +71,7 @@ export function Dashboard() {
       setStream(displayStream);
       setSharingTo(receiverId);
 
-      await initiateShare(firestore, displayStream, receiverId, onConnectionStateChange);
+      await initiateShare(firestore, displayStream, receiverId, deviceName, onConnectionStateChange);
       
     } catch (error) {
       console.error("Error al iniciar la compartición de pantalla:", error);
@@ -79,22 +84,51 @@ export function Dashboard() {
     }
   }, [firestore, toast, handleStopSharing]);
 
+  const handleStartSharing = (receiverId: string) => {
+    if (sharerDeviceName) {
+      startSharingProcess(receiverId, sharerDeviceName);
+    } else {
+      setPendingReceiverId(receiverId);
+      setIsNameModalOpen(true);
+    }
+  };
+
+  const handleNameSubmit = (name: string) => {
+    setSharerDeviceName(name);
+    if (pendingReceiverId) {
+      startSharingProcess(pendingReceiverId, name);
+    }
+    setIsNameModalOpen(false);
+    setPendingReceiverId(null);
+  };
+
+
   return (
-    <div className="grid gap-6 md:gap-8 lg:grid-cols-5">
-      <div className="lg:col-span-3 flex flex-col gap-6">
-        <ShareControls
-          isSharing={!!sharingTo}
-          onStopSharing={handleStopSharing}
-          videoRef={videoRef}
-        />
+    <>
+      <DeviceNameModal
+        isOpen={isNameModalOpen}
+        onClose={() => setIsNameModalOpen(false)}
+        onSubmit={handleNameSubmit}
+        title="Ingresa el nombre de tu dispositivo"
+        description="Dale un nombre a este dispositivo (ej. Teléfono de Juan) para que la pantalla receptora sepa quién se está conectando."
+        buttonText="Empezar a Compartir"
+      />
+      <div className="grid gap-6 md:gap-8 lg:grid-cols-5">
+        <div className="lg:col-span-3 flex flex-col gap-6">
+          <ShareControls
+            isSharing={!!sharingTo}
+            onStopSharing={handleStopSharing}
+            videoRef={videoRef}
+          />
+        </div>
+        <div className="lg:col-span-2">
+          <ReceiverList 
+            onShare={handleStartSharing}
+            sharingTo={sharingTo}
+            connectionState={connectionState}
+          />
+        </div>
       </div>
-      <div className="lg:col-span-2">
-        <ReceiverList 
-          onShare={handleStartSharing} 
-          sharingTo={sharingTo}
-          connectionState={connectionState}
-        />
-      </div>
-    </div>
+    </>
   );
 }

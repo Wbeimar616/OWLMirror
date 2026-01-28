@@ -65,6 +65,7 @@ export const initiateShare = async (
   firestore: Firestore,
   stream: MediaStream,
   receiverId: string,
+  sharerDeviceName: string,
   onConnectionStateChange: (state: RTCPeerConnectionState) => void
 ): Promise<void> => {
   
@@ -104,11 +105,11 @@ export const initiateShare = async (
     type: offerDescription.type,
   };
   
-  await updateDoc(receiverRef, { offer, status: 'connecting' }).catch(e => {
+  await updateDoc(receiverRef, { offer, status: 'connecting', sharerDeviceName }).catch(e => {
     const err = new FirestorePermissionError({
         path: receiverRef.path,
         operation: 'update',
-        requestResourceData: { offer, status: 'connecting' },
+        requestResourceData: { offer, status: 'connecting', sharerDeviceName },
     });
     errorEmitter.emit('permission-error', err);
   });
@@ -143,13 +144,19 @@ export const hangUp = async (firestore: Firestore, receiverId: string | null, is
         const docSnap = await getDoc(receiverRef);
         if (docSnap.exists()) {
            if (isReceiver) {
-              await deleteDoc(receiverRef).catch(e => console.error("Failed to delete receiver doc", e));
+              await deleteDoc(receiverRef).catch(e => {
+                const err = new FirestorePermissionError({
+                    path: receiverRef.path,
+                    operation: 'delete',
+                });
+                errorEmitter.emit('permission-error', err);
+              });
            } else {
-            await updateDoc(receiverRef, { status: 'available', offer: null, answer: null }).catch(e => {
+            await updateDoc(receiverRef, { status: 'available', offer: null, answer: null, sharerDeviceName: null }).catch(e => {
                   const err = new FirestorePermissionError({
                       path: receiverRef.path,
                       operation: 'update',
-                      requestResourceData: { status: 'available', offer: null, answer: null },
+                      requestResourceData: { status: 'available', offer: null, answer: null, sharerDeviceName: null },
                   });
                   errorEmitter.emit('permission-error', err);
             });
