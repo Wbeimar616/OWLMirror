@@ -1,8 +1,6 @@
 import React from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
 import { Play, StopCircle, ScreenShare, Tv } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +17,7 @@ export function ShareControls({
   onStopSharing,
   videoRef,
 }: ShareControlsProps) {
+
   return (
     <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300">
       <CardHeader>
@@ -27,7 +26,7 @@ export function ShareControls({
           <div>
             <CardTitle className="text-2xl font-bold">Screen Sharing</CardTitle>
             <CardDescription>
-              Share your screen or a specific application with other devices.
+              Share your screen with other devices on your network.
             </CardDescription>
           </div>
         </div>
@@ -43,6 +42,7 @@ export function ShareControls({
             ref={videoRef}
             autoPlay
             muted
+            playsInline
             className={cn("w-full h-full object-contain", { hidden: !isSharing })}
           />
           {!isSharing && (
@@ -52,28 +52,6 @@ export function ShareControls({
             </div>
           )}
         </div>
-        <RadioGroup defaultValue="entire-screen" className="grid grid-cols-2 gap-4">
-          <div>
-            <RadioGroupItem value="entire-screen" id="entire-screen" className="peer sr-only" />
-            <Label
-              htmlFor="entire-screen"
-              className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-            >
-              <ScreenShare className="mb-3 h-6 w-6" />
-              Entire Screen
-            </Label>
-          </div>
-          <div>
-            <RadioGroupItem value="application" id="application" className="peer sr-only" />
-            <Label
-              htmlFor="application"
-              className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground cursor-pointer peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mb-3 h-6 w-6"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h4"/><path d="M6 12h4"/></svg>
-              Application Window
-            </Label>
-          </div>
-        </RadioGroup>
       </CardContent>
       <CardFooter>
         {!isSharing ? (

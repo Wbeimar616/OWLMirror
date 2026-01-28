@@ -1,69 +1,93 @@
+"use client";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Wifi } from "lucide-react";
+import { Wifi, Loader } from "lucide-react";
+import { useDoc } from "@/firebase";
 
-const devices = [
-  { name: "Living Room TV", status: "Available", type: "TV" },
-  { name: "John's Laptop", status: "Connected", type: "Laptop" },
-  { name: "Conference Room Projector", status: "Available", type: "Projector" },
-  { name: "Mary's Tablet", status: "Unavailable", type: "Tablet" },
-];
+type ConnectionListProps = {
+  connectionId: string | null;
+  connectionState: RTCPeerConnectionState;
+};
 
-export function ConnectionList() {
+type Connection = {
+  id: string;
+  initiatorName: string;
+  status: 'offering' | 'connected' | 'disconnected';
+}
+
+export function ConnectionList({ connectionId, connectionState }: ConnectionListProps) {
+  const { data: connection, loading } = useDoc<Connection>(connectionId ? `connections/${connectionId}`: null);
+
+  const getStatus = () => {
+    if (!connectionId) return { text: "Idle", variant: "outline" };
+    if (loading) return { text: "Initializing...", variant: "secondary" };
+    if (!connection) return { text: "Not Found", variant: "destructive" };
+
+    switch (connectionState) {
+        case 'connecting':
+        case 'new':
+            return { text: "Connecting...", variant: "secondary" };
+        case 'connected':
+             return { text: "Connected", variant: "default" };
+        case 'disconnected':
+             return { text: "Disconnected", variant: "destructive" };
+        case 'failed':
+            return { text: "Failed", variant: "destructive" };
+        case 'closed':
+            return { text: "Closed", variant: "outline" };
+    }
+
+    if (connection.status === 'offering') {
+      return { text: "Offering...", variant: "secondary" };
+    }
+    
+    return { text: connection.status, variant: "secondary" };
+  }
+
+  const status = getStatus();
+
   return (
     <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300">
       <CardHeader>
         <div className="flex items-center gap-3">
             <Wifi className="w-8 h-8 text-primary" />
             <div>
-                <CardTitle className="text-2xl font-bold">Available Devices</CardTitle>
+                <CardTitle className="text-2xl font-bold">Connection Status</CardTitle>
                 <CardDescription>
-                Devices on your network for mirroring.
+                  Your current screen sharing session status.
                 </CardDescription>
             </div>
         </div>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Device</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {devices.map((device) => (
-              <TableRow key={device.name}>
-                <TableCell className="font-medium">{device.name}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      device.status === "Connected"
-                        ? "default"
-                        : device.status === "Available"
-                        ? "secondary"
-                        : "outline"
-                    }
-                  >
-                    {device.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    size="sm"
-                    variant={device.status === 'Connected' ? 'outline' : 'default'}
-                    disabled={device.status === "Unavailable"}
-                  >
-                    {device.status === "Connected" ? "Disconnect" : "Connect"}
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        {connectionId && connection ? (
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                    <TableHead>Device</TableHead>
+                    <TableHead className="text-right">Status</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    <TableRow>
+                    <TableCell className="font-medium">{connection.initiatorName}</TableCell>
+                    <TableCell className="text-right">
+                        <Badge variant={status.variant as any}>
+                          {status.text === 'Connecting...' && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                          {status.text}
+                        </Badge>
+                    </TableCell>
+                    </TableRow>
+                </TableBody>
+            </Table>
+        ) : (
+            <div className="text-center text-muted-foreground p-8">
+                <p>Not currently sharing.</p>
+                <p className="text-sm">Click "Start Sharing" to begin.</p>
+            </div>
+        )}
       </CardContent>
     </Card>
   );
