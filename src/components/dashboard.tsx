@@ -1,53 +1,50 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { ShareControls } from "./share-controls";
-import { ConnectionList } from "./connection-list";
+import { ReceiverList } from "./connection-list";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore } from "@/firebase";
-import { createOffer, hangUp } from "@/firebase/webrtc";
-import { DeviceNameModal } from "./device-name-modal";
-
+import { initiateShare, hangUp } from "@/firebase/webrtc";
 
 export function Dashboard() {
   const { toast } = useToast();
   const firestore = useFirestore();
-  const [isSharing, setIsSharing] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [sharingTo, setSharingTo] = useState<string | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [connectionId, setConnectionId] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>('new');
   
   const videoRef = useRef<HTMLVideoElement>(null);
-  
-  const handleStopSharing = useCallback(async (streamToStop: MediaStream | null) => {
-    const currentStream = streamToStop || stream;
-    if (currentStream) {
-      currentStream.getTracks().forEach((track) => track.stop());
+
+  const handleStopSharing = useCallback(async () => {
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
     setStream(null);
-    setIsSharing(false);
     
-    if (firestore && connectionId) {
-      await hangUp(firestore, connectionId);
+    if (firestore && sharingTo) {
+      await hangUp(firestore, sharingTo);
     }
-    setConnectionId(null);
+    setSharingTo(null);
     setConnectionState('new');
-  }, [stream, firestore, connectionId]);
+  }, [stream, firestore, sharingTo]);
 
   const onConnectionStateChange = (state: RTCPeerConnectionState) => {
     setConnectionState(state);
+     if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        handleStopSharing();
+    }
   }
 
-  const handleStartSharing = useCallback(async (deviceName: string) => {
+  const handleStartSharing = useCallback(async (receiverId: string) => {
     if (!firestore) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Firestore is not initialized.",
+        description: "Firestore no está inicializado.",
       });
       return;
     }
@@ -63,46 +60,41 @@ export function Dashboard() {
       }
       
       displayStream.getVideoTracks()[0].addEventListener('ended', () => {
-        handleStopSharing(displayStream);
+        handleStopSharing();
       });
       
       setStream(displayStream);
-      setIsSharing(true);
+      setSharingTo(receiverId);
 
-      const newConnectionId = await createOffer(firestore, displayStream, null, deviceName, onConnectionStateChange);
-      setConnectionId(newConnectionId);
+      await initiateShare(firestore, displayStream, receiverId, onConnectionStateChange);
       
     } catch (error) {
-      console.error("Error starting screen share:", error);
+      console.error("Error al iniciar la compartición de pantalla:", error);
       toast({
         variant: "destructive",
-        title: "Screen Share Failed",
-        description: "Could not start screen sharing. Please grant permission and try again.",
+        title: "Error al compartir",
+        description: "No se pudo iniciar la compartición de pantalla. Por favor, otorga los permisos y vuelve a intentarlo.",
       });
-      setIsSharing(false);
+      setSharingTo(null);
     }
   }, [firestore, toast, handleStopSharing]);
 
   return (
-    <>
-      <DeviceNameModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSubmit={handleStartSharing}
-      />
-      <div className="grid gap-6 md:gap-8 lg:grid-cols-5">
-        <div className="lg:col-span-3 flex flex-col gap-6">
-          <ShareControls
-            isSharing={isSharing}
-            onStartSharing={() => setIsModalOpen(true)}
-            onStopSharing={() => handleStopSharing(stream)}
-            videoRef={videoRef}
-          />
-        </div>
-        <div className="lg:col-span-2">
-          <ConnectionList connectionId={connectionId} connectionState={connectionState} />
-        </div>
+    <div className="grid gap-6 md:gap-8 lg:grid-cols-5">
+      <div className="lg:col-span-3 flex flex-col gap-6">
+        <ShareControls
+          isSharing={!!sharingTo}
+          onStopSharing={handleStopSharing}
+          videoRef={videoRef}
+        />
       </div>
-    </>
+      <div className="lg:col-span-2">
+        <ReceiverList 
+          onShare={handleStartSharing} 
+          sharingTo={sharingTo}
+          connectionState={connectionState}
+        />
+      </div>
+    </div>
   );
 }

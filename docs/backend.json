@@ -1,29 +1,33 @@
 {
   "entities": {
-    "Connection": {
-      "title": "WebRTC Connection",
-      "description": "Represents a WebRTC signaling session for screen sharing.",
+    "Receiver": {
+      "title": "Receiver",
+      "description": "Represents a device available to receive a screen share, like a TV. It also contains the WebRTC session data.",
       "type": "object",
       "properties": {
-        "offer": {
-          "type": "object",
-          "description": "The SDP offer from the initiating peer."
-        },
-        "answer": {
-          "type": "object",
-          "description": "The SDP answer from the receiving peer."
+        "name": {
+          "type": "string",
+          "description": "A display name for the receiver device."
         },
         "status": {
           "type": "string",
-          "description": "The current status of the connection.",
-          "enum": ["offering", "connected", "disconnected"]
+          "description": "The current status of the receiver.",
+          "enum": ["available", "connecting", "connected", "disconnected"]
         },
-        "initiatorName": {
+        "offer": {
+          "type": "object",
+          "description": "The SDP offer from the initiating peer (the sharer)."
+        },
+        "answer": {
+          "type": "object",
+          "description": "The SDP answer from the receiving peer (the TV)."
+        },
+        "sharerDeviceName": {
             "type": "string",
-            "description": "A display name for the device initiating the connection."
+            "description": "The name of the device that is sharing the screen."
         }
       },
-      "required": ["offer", "status", "initiatorName"]
+      "required": ["name", "status"]
     },
     "IceCandidate": {
         "title": "ICE Candidate",
@@ -41,15 +45,15 @@
     "providers": []
   },
   "firestore": {
-    "/connections/{connectionId}": {
-      "schema": { "$ref": "#/backend/entities/Connection" },
-      "description": "A collection of WebRTC signaling sessions."
+    "/receivers/{receiverId}": {
+      "schema": { "$ref": "#/backend/entities/Receiver" },
+      "description": "A collection of WebRTC receiver devices (e.g., TVs)."
     },
-    "/connections/{connectionId}/callerCandidates/{candidateId}": {
+    "/receivers/{receiverId}/callerCandidates/{candidateId}": {
         "schema": { "$ref": "#/backend/entities/IceCandidate" },
         "description": "ICE candidates from the peer that initiated the call."
     },
-    "/connections/{connectionId}/calleeCandidates/{candidateId}": {
+    "/receivers/{receiverId}/calleeCandidates/{candidateId}": {
         "schema": { "$ref": "#/backend/entities/IceCandidate" },
         "description": "ICE candidates from the peer that answered the call."
     }

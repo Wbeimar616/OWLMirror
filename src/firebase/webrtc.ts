@@ -8,6 +8,7 @@ import {
   updateDoc,
   getDoc,
   setDoc,
+  deleteDoc,
   Firestore,
   serverTimestamp
 } from 'firebase/firestore';
@@ -24,6 +25,7 @@ const servers = {
 };
 
 let peerConnection: RTCPeerConnection | null = null;
+let localStream: MediaStream | null = null;
 
 const getPeerConnection = () => {
   if (!peerConnection) {
@@ -34,9 +36,13 @@ const getPeerConnection = () => {
 
 const closePeerConnection = () => {
     if (peerConnection) {
-        // Stop all tracks
         const pc = peerConnection;
-        peerConnection = null; // Prevent re-entrancy
+        peerConnection = null; 
+        
+        pc.onicecandidate = null;
+        pc.ontrack = null;
+        pc.onconnectionstatechange = null;
+
         pc.getSenders().forEach(sender => {
             if (sender.track) {
                 sender.track.stop();
@@ -47,35 +53,37 @@ const closePeerConnection = () => {
                 receiver.track.stop();
             }
         });
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+            localStream = null;
+        }
         pc.close();
     }
 }
 
-
-export const createOffer = async (
+export const initiateShare = async (
   firestore: Firestore,
-  localStream: MediaStream,
-  remoteVideo: HTMLVideoElement | null, // Not used for offerer, but kept for consistency
-  deviceName: string,
+  stream: MediaStream,
+  receiverId: string,
   onConnectionStateChange: (state: RTCPeerConnectionState) => void
-): Promise<string> => {
+): Promise<void> => {
   
-  closePeerConnection(); // Ensure any existing connection is closed
+  closePeerConnection();
   const pc = getPeerConnection();
+  localStream = stream;
 
   localStream.getTracks().forEach((track) => {
     pc.addTrack(track, localStream);
   });
 
-  const connectionsRef = collection(firestore, 'connections');
-  const callDoc = doc(connectionsRef);
-  const offerCandidates = collection(callDoc, 'callerCandidates');
+  const receiverRef = doc(firestore, 'receivers', receiverId);
+  const callerCandidates = collection(receiverRef, 'callerCandidates');
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      addDoc(offerCandidates, event.candidate.toJSON()).catch(e => {
+      addDoc(callerCandidates, event.candidate.toJSON()).catch(e => {
         const err = new FirestorePermissionError({
-            path: offerCandidates.path,
+            path: callerCandidates.path,
             operation: 'create',
             requestResourceData: event.candidate?.toJSON(),
         });
@@ -95,36 +103,30 @@ export const createOffer = async (
     sdp: offerDescription.sdp,
     type: offerDescription.type,
   };
-
-  const connectionData = { 
-    offer, 
-    status: 'offering', 
-    initiatorName: deviceName,
-    createdAt: serverTimestamp() 
-  };
-  await setDoc(callDoc, connectionData).catch(e => {
+  
+  await updateDoc(receiverRef, { offer, status: 'connecting' }).catch(e => {
     const err = new FirestorePermissionError({
-        path: callDoc.path,
-        operation: 'create',
-        requestResourceData: connectionData,
+        path: receiverRef.path,
+        operation: 'update',
+        requestResourceData: { offer, status: 'connecting' },
     });
     errorEmitter.emit('permission-error', err);
   });
 
-  const unsubscribe = onSnapshot(callDoc, (snapshot) => {
+  const unsubscribe = onSnapshot(receiverRef, (snapshot) => {
     const data = snapshot.data();
     if (!pc.currentRemoteDescription && data?.answer) {
       const answerDescription = new RTCSessionDescription(data.answer);
       pc.setRemoteDescription(answerDescription);
     }
     if (data?.status === 'disconnected' || data?.status === 'failed') {
-        hangUp(firestore, callDoc.id);
+        hangUp(firestore, receiverId);
         unsubscribe();
     }
   });
 
-  const answerCandidates = collection(callDoc, 'calleeCandidates');
-  onSnapshot(answerCandidates, (snapshot) => {
+  const calleeCandidates = collection(receiverRef, 'calleeCandidates');
+  onSnapshot(calleeCandidates, (snapshot) => {
     snapshot.docChanges().forEach((change) => {
       if (change.type === 'added') {
         const candidate = new RTCIceCandidate(change.doc.data());
@@ -132,40 +134,41 @@ export const createOffer = async (
       }
     });
   });
-
-  return callDoc.id;
 };
 
-export const hangUp = async (firestore: Firestore, connectionId: string | null) => {
+export const hangUp = async (firestore: Firestore, receiverId: string | null, isReceiver?: boolean) => {
     closePeerConnection();
-    if (connectionId) {
-        const callDoc = doc(firestore, 'connections', connectionId);
-        const docSnap = await getDoc(callDoc);
-        if (docSnap.exists() && docSnap.data().status !== 'disconnected') {
-           await updateDoc(callDoc, { status: 'disconnected' }).catch(e => {
-                const err = new FirestorePermissionError({
-                    path: callDoc.path,
-                    operation: 'update',
-                    requestResourceData: { status: 'disconnected' },
-                });
-                errorEmitter.emit('permission-error', err);
-           });
+    if (receiverId) {
+        const receiverRef = doc(firestore, 'receivers', receiverId);
+        const docSnap = await getDoc(receiverRef);
+        if (docSnap.exists()) {
+           if (isReceiver) {
+              await deleteDoc(receiverRef).catch(e => console.error("Failed to delete receiver doc", e));
+           } else {
+            await updateDoc(receiverRef, { status: 'available', offer: null, answer: null }).catch(e => {
+                  const err = new FirestorePermissionError({
+                      path: receiverRef.path,
+                      operation: 'update',
+                      requestResourceData: { status: 'available', offer: null, answer: null },
+                  });
+                  errorEmitter.emit('permission-error', err);
+            });
+           }
         }
     }
 };
 
-export const answerOffer = async (
+export const answerShare = async (
     firestore: Firestore,
-    connectionId: string,
+    receiverId: string,
     remoteVideo: HTMLVideoElement | null,
     onConnectionStateChange: (state: RTCPeerConnectionState) => void
 ) => {
-    closePeerConnection(); // Ensure any existing connection is closed
+    closePeerConnection();
     const pc = getPeerConnection();
 
     pc.ontrack = (event) => {
         if (remoteVideo) {
-            // Assign the stream to the video element
             if (!remoteVideo.srcObject) {
                 remoteVideo.srcObject = new MediaStream();
             }
@@ -176,14 +179,14 @@ export const answerOffer = async (
     };
 
 
-    const callDoc = doc(firestore, 'connections', connectionId);
-    const answerCandidates = collection(callDoc, 'calleeCandidates');
-    const offerCandidates = collection(callDoc, 'callerCandidates');
+    const receiverRef = doc(firestore, 'receivers', receiverId);
+    const calleeCandidates = collection(receiverRef, 'calleeCandidates');
+    const callerCandidates = collection(receiverRef, 'callerCandidates');
 
     pc.onicecandidate = (event) => {
-        event.candidate && addDoc(answerCandidates, event.candidate.toJSON()).catch(e => {
+        event.candidate && addDoc(calleeCandidates, event.candidate.toJSON()).catch(e => {
             const err = new FirestorePermissionError({
-                path: answerCandidates.path,
+                path: calleeCandidates.path,
                 operation: 'create',
                 requestResourceData: event.candidate?.toJSON(),
             });
@@ -195,9 +198,9 @@ export const answerOffer = async (
         onConnectionStateChange(pc.connectionState);
     }
 
-    const callData = (await getDoc(callDoc)).data();
+    const callData = (await getDoc(receiverRef)).data();
     if (!callData || !callData.offer) {
-        console.error("Connection document or offer not found!");
+        console.error("Receiver document or offer not found!");
         return;
     }
     const offerDescription = callData.offer;
@@ -211,16 +214,16 @@ export const answerOffer = async (
         sdp: answerDescription.sdp,
     };
 
-    await updateDoc(callDoc, { answer, status: 'connected' }).catch(e => {
+    await updateDoc(receiverRef, { answer, status: 'connected' }).catch(e => {
         const err = new FirestorePermissionError({
-            path: callDoc.path,
+            path: receiverRef.path,
             operation: 'update',
             requestResourceData: { answer, status: 'connected' },
         });
         errorEmitter.emit('permission-error', err);
     });
 
-    onSnapshot(offerCandidates, (snapshot) => {
+    onSnapshot(callerCandidates, (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type === 'added') {
                 let data = change.doc.data();
@@ -229,10 +232,10 @@ export const answerOffer = async (
         });
     });
 
-     const unsubscribe = onSnapshot(callDoc, (snapshot) => {
+     const unsubscribe = onSnapshot(receiverRef, (snapshot) => {
         const data = snapshot.data();
         if (data?.status === 'disconnected' || data?.status === 'failed') {
-            hangUp(firestore, callDoc.id);
+            hangUp(firestore, receiverId);
             unsubscribe();
         }
     });

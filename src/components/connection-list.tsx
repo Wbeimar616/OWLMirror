@@ -3,50 +3,46 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Wifi, Loader } from "lucide-react";
-import { useDoc } from "@/firebase";
+import { Button } from "@/components/ui/button";
+import { Wifi, Loader, ScreenShare } from "lucide-react";
+import { useCollection } from "@/firebase";
 
-type ConnectionListProps = {
-  connectionId: string | null;
+type Receiver = {
+  id: string;
+  name: string;
+  status: 'available' | 'connecting' | 'connected' | 'disconnected';
+};
+
+type ReceiverListProps = {
+  onShare: (receiverId: string) => void;
+  sharingTo: string | null;
   connectionState: RTCPeerConnectionState;
 };
 
-type Connection = {
-  id: string;
-  initiatorName: string;
-  status: 'offering' | 'connected' | 'disconnected';
-}
+export function ReceiverList({ onShare, sharingTo, connectionState }: ReceiverListProps) {
+  const { data: receivers, loading } = useCollection<Receiver>("receivers");
 
-export function ConnectionList({ connectionId, connectionState }: ConnectionListProps) {
-  const { data: connection, loading } = useDoc<Connection>(connectionId ? `connections/${connectionId}`: null);
+  const availableReceivers = receivers?.filter(r => r.status === 'available');
 
-  const getStatus = () => {
-    if (!connectionId) return { text: "Idle", variant: "outline" };
-    if (loading) return { text: "Initializing...", variant: "secondary" };
-    if (!connection) return { text: "Not Found", variant: "destructive" };
+  const getStatus = (receiver: Receiver) => {
+    if (sharingTo !== receiver.id) {
+        return { text: "Disponible", variant: "default" };
+    }
 
     switch (connectionState) {
         case 'connecting':
         case 'new':
-            return { text: "Connecting...", variant: "secondary" };
+            return { text: "Conectando...", variant: "secondary" };
         case 'connected':
-             return { text: "Connected", variant: "default" };
+             return { text: "Compartiendo", variant: "destructive" };
         case 'disconnected':
-             return { text: "Disconnected", variant: "destructive" };
         case 'failed':
-            return { text: "Failed", variant: "destructive" };
         case 'closed':
-            return { text: "Closed", variant: "outline" };
-    }
-
-    if (connection.status === 'offering') {
-      return { text: "Offering...", variant: "secondary" };
+            return { text: "Desconectado", variant: "outline" };
     }
     
-    return { text: connection.status, variant: "secondary" };
+    return { text: receiver.status, variant: "secondary" };
   }
-
-  const status = getStatus();
 
   return (
     <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300">
@@ -54,39 +50,60 @@ export function ConnectionList({ connectionId, connectionState }: ConnectionList
         <div className="flex items-center gap-3">
             <Wifi className="w-8 h-8 text-primary" />
             <div>
-                <CardTitle className="text-2xl font-bold">Connection Status</CardTitle>
+                <CardTitle className="text-2xl font-bold">Dispositivos Disponibles</CardTitle>
                 <CardDescription>
-                  Your current screen sharing session status.
+                  Dispositivos en tu red listos para recibir.
                 </CardDescription>
             </div>
         </div>
       </CardHeader>
       <CardContent>
-        {connectionId && connection ? (
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                    <TableHead>Device</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    <TableRow>
-                    <TableCell className="font-medium">{connection.initiatorName}</TableCell>
-                    <TableCell className="text-right">
+        {loading ? <div className="flex items-center justify-center p-8"><Loader className="animate-spin" /></div> : (
+        <Table>
+            <TableHeader>
+                <TableRow>
+                <TableHead>Dispositivo</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="text-right">Acción</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+            {receivers && receivers.length > 0 ? receivers.map((receiver) => {
+              const status = getStatus(receiver);
+              const isCurrent = sharingTo === receiver.id;
+              const canShare = !sharingTo && receiver.status === 'available';
+              return (
+                <TableRow key={receiver.id}>
+                    <TableCell className="font-medium">{receiver.name}</TableCell>
+                    <TableCell>
                         <Badge variant={status.variant as any}>
-                          {status.text === 'Connecting...' && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+                          {status.text === 'Conectando...' && <Loader className="mr-2 h-4 w-4 animate-spin" />}
                           {status.text}
                         </Badge>
                     </TableCell>
-                    </TableRow>
-                </TableBody>
-            </Table>
-        ) : (
-            <div className="text-center text-muted-foreground p-8">
-                <p>Not currently sharing.</p>
-                <p className="text-sm">Click "Start Sharing" to begin.</p>
-            </div>
+                    <TableCell className="text-right">
+                    <Button
+                        size="sm"
+                        onClick={() => onShare(receiver.id)}
+                        disabled={!canShare}
+                        variant={isCurrent ? "destructive" : "default"}
+                    >
+                        {isCurrent ? <ScreenShare className="mr-2 h-4 w-4" /> : null}
+                        {isCurrent ? "Compartiendo" : "Compartir"}
+                    </Button>
+                    </TableCell>
+                </TableRow>
+              )
+            }) : (
+                <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground p-8">
+                        No se encontraron dispositivos receptores.
+                        <p className="text-sm">Asegúrate de que el otro dispositivo haya abierto la aplicación en la página /tv.</p>
+                    </TableCell>
+                </TableRow>
+            )}
+            </TableBody>
+        </Table>
         )}
       </CardContent>
     </Card>
